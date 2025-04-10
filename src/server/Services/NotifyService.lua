@@ -23,6 +23,7 @@ function NotifyService:KnitStart()
 end
 
 function NotifyService:NotifyGlobal(message)
+  print("notfied global!")
   self.previousGlobalMessage = message
 
   game:SetAttribute("globalMessage", message)
@@ -37,9 +38,12 @@ function NotifyService:NotifyPlayer(player: Player, message)
 end
 
 function NotifyService.Client:GetGlobalMessage()
-  return self.previousGlobalMessage
+  print(NotifyService.previousGlobalMessage)
+  return NotifyService.previousGlobalMessage
 end
 
 function NotifyService.Client:GetPersonalMessage(player: Player)
   return self.personalMessages[player.Name]
 end
+
+return NotifyService

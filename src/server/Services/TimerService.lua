@@ -44,6 +44,8 @@ function TimerService:ClearTimer(message)
 end
 
 function TimerService:IntializeTimer(length, callbackFn, message, onTimerFinishMessage)
+  clearTimer(self, true)
+
   self.started = os.time()
   self.length = length
   
@@ -77,3 +79,5 @@ function TimerService.Client:GetTimeRemaining()
 
   return timeRemaining
 end
+
+return TimerService

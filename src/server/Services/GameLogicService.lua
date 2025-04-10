@@ -11,11 +11,42 @@ local GameLogicService = Knit.CreateService {
 }
 
 function GameLogicService:KnitInit()
+  self.deathSignal = {}
   self.hiders = {}
   self.seeker = nil
   self.seekerKills = 0
 
   self.started = false
+end
+
+local function handlePlayerDeath(self, player, left)
+  local playerRole = player:GetAttribute("role")
+
+  if playerRole ~= "hider" or not self.started then
+    return
+  end
+
+  player:SetAttribute("role", nil)
+
+  for i, hider in ipairs(self.hiders) do
+    if hider.Name == player.Name then
+      table.remove(self.hiders, i)
+      break
+    end
+  end
+
+  if not left then
+    self.seekerKills += 1
+    self.NotifyService:NotifyPlayer(self.seeker, "You have killed " .. player.Name .. "!")
+    self.NotifyService:NotifyPlayer(player, "You have been killed by " .. self.seeker.Name .. "!")
+  end
+
+  self.deathSignal[player.Name]:Disconnect()
+  self.deathSignal[player.Name] = nil
+
+  if #self.hiders == 0 then
+    self.GameStateService:EndGame("SEEKER_WIN")
+  end
 end
 
 local function handlePlayerRemoved(self, player)
@@ -26,37 +57,13 @@ local function handlePlayerRemoved(self, player)
   local playerRole = player:GetAttribute("role")
 
   if playerRole == "seeker" then
-    self.TimerService:ClearTimer("The seeker has left the game!")
-
-    local playerCount = #Players:GetPlayers()
-
-    if playerCount < 2 then
-      self.GameStateService:SetGameState(GameStateEnum.WAITING_FOR_PLAYERS)
-    end
+    self.GameStateService:EndGame("SEEKER_LEAVE")
 
     return
   end
 
   if playerRole == "hider" then
-    for i, hider in ipairs(self.hiders) do
-      if hider.Name == player.Name then
-        table.remove(self.hiders, i)
-        break
-      end
-    end
-
-    if #self.hiders >= 1 then
-      return
-
-    end
-
-    if self.seekerKills >= 1 then
-      -- End game in favor of the seeker
-      return
-    end
-
-    self.TimerService:ClearTimer("All hiders have left the game!")
-    return
+    handlePlayerDeath(self, player, true)
   end
 end
 
@@ -105,9 +112,16 @@ local function handleHiders(self)
 
     player:SetAttribute("role", "hider")
 
+    
     -- Teleport hider
     -- Give their equipped tool
-
+    
+    local character = player.Character or player.CharacterAdded:Wait()
+    local humanoid:Humanoid = character:WaitForChild("Humanoid")
+    
+    self.deathSignal[player.Name] = humanoid.Died:Connect(function()
+      handlePlayerDeath(self, player, false)
+    end)
     self.NotifyService:NotifyPlayer(player, "You are a hider. Find a hiding spot before the seeker finds you!")
   end
 
@@ -124,3 +138,50 @@ function GameLogicService:HandleGameStart()
   handleSeeker(self)
   handleHiders(self)
 end
+
+local function rewardPlayersOnState(self, state)
+  local NotifyService = self.NotifyService
+
+  if state == "SEEKER_LEAVE" then
+    -- Only reward XP
+    NotifyService:NotifyGlobal("Seeker has left the game!")
+  end 
+
+  if state == "HIDER_WIN" then
+    -- Reward the hiders (more than the seeker)
+    NotifyService:NotifyGlobal("Seeker didn't find all the hiders, hiders win!")
+  end
+
+  if state == "SEEKER_WIN" then
+    -- Reward the seeker (more than the hiders)
+    NotifyService:NotifyGlobal("Seeker found all the hiders, seeker wins!")
+  end
+
+end
+
+local function gameEndCleanUp(self)
+  for _, player in ipairs(Players:GetPlayers()) do
+    player:SetAttribute("role", nil)
+  end
+  --  Disconnect the death signals
+  for _, connection in pairs(self.deathSignal) do
+    connection:Disconnect()
+  end
+
+  self.deathSignal = {}
+  self.hiders = {}
+  self.seeker = nil
+  self.seekerKills = 0
+end
+
+function GameLogicService:HandleGameEnd(state)
+  if not self.started then
+    return
+  end
+  self.started = false
+  
+  rewardPlayersOnState(self, state)
+  gameEndCleanUp(self)
+end
+
+return GameLogicService

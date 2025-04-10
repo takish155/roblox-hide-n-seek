@@ -4,6 +4,7 @@ local Players = game:GetService("Players")
 local Knit = require(ReplicatedStorage.Packages.knit)
 local GameOptionEnum = require(ReplicatedStorage.Enums.GameOptionEnum)
 local GameStateEnum = require(ReplicatedStorage.Enums.GameStateEnum)
+local Promise = require(ReplicatedStorage.Packages.promise)
 
 local GameStateService = Knit.CreateService {
   Name = "GameStateService",
@@ -39,16 +40,21 @@ local function handlePlayerRemoving(self)
 end
 
 function GameStateService:KnitStart()
-  self.TimerService = Knit.GetService("TimerService")
-
+  local NotifyService = Knit.GetService("NotifyService")
+  
+  self:SetGameState(GameStateEnum.WAITING_FOR_PLAYERS)
+  NotifyService:NotifyGlobal("Waiting for players...")
+  
   Players.PlayerAdded:Connect(function(_)
     handlePlayerAdded(self)
   end)
-
-
+  
+  
   Players.PlayerRemoving:Connect(function(_)
     handlePlayerRemoving(self)
   end)
+  
+  self.TimerService = Knit.GetService("TimerService")
 end
 
 function GameStateService:GetCurrentGameState()
@@ -60,15 +66,17 @@ function GameStateService:SetGameState(newGameState)
   game:SetAttribute("gameState", newGameState)
 end
 
-function GameStateService:StartIntermission()
+function GameStateService:CanStartIntermission()
   local playerCount = #Players:GetPlayers()
 
-  if 
-      self.currentGameState ~= GameStateEnum.WAITING_FOR_PLAYERS and
-      self.currentGameState ~= GameStateEnum.GAME_OVER and
-      playerCount < 2
-    then
-      
+  return self.currentGameState == GameStateEnum.WAITING_FOR_PLAYERS or
+  self.currentGameState == GameStateEnum.GAME_OVER and
+  playerCount >= 2
+end
+
+function GameStateService:StartIntermission()
+  local canStart = self:CanStartIntermission()
+  if not canStart then
     return
   end
 
@@ -111,15 +119,25 @@ function GameStateService:StartGame()
   self:SetGameState(GameStateEnum.IN_PROGRESS)
 end
 
-function GameStateService:EndGame()
+local function endGameAction(self)
+  Promise.delay(5):andThen(function ()
+    local canStartIntermission = self:CanStartIntermission()
+    if not canStartIntermission then
+      self:SetGameState(GameStateEnum.WAITING_FOR_PLAYERS)
+      return
+    end
+  
+    self:StartIntermission()
+  end)
+end
+
+function GameStateService:EndGame(state)
   if self.currentGameState ~= GameStateEnum.IN_PROGRESS then
     return
   end
   self:SetGameState(GameStateEnum.GAME_OVER)
 
-  -- Teleport the players back to the lobby
-  -- Reward the players
-  -- Start the intermission again
+  endGameAction(self)
 end
 
 return GameStateService
